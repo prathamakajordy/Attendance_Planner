@@ -3,6 +3,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 import datetime as dt
 import enum
+from sqlalchemy.dialects.sqlite import JSON
 
 class WeekdayEnum(enum.IntEnum):
     MONDAY = 0
@@ -22,6 +23,7 @@ class TimetableSlot(Base):
     start_time: Mapped[dt.time] = mapped_column(Time, nullable=False)
     end_time: Mapped[dt.time] = mapped_column(Time, nullable=False)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    required_groups: Mapped[list[str]] = mapped_column(JSON, default=list, server_default='[]')
 
     semester = relationship("SemesterProfile", back_populates="timetable_slots")
     subject = relationship("Subject", back_populates="timetable_slots")

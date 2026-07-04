@@ -78,6 +78,24 @@ function StepSemesterDetails({ data, onChange, errors }) {
         </div>
       </div>
 
+      {/* Academic Groups */}
+      <div>
+        <label htmlFor="semester-groups" className="block text-sm font-medium text-slate-300 mb-1.5">
+          My Academic Groups <span className="text-slate-500 font-normal">(Optional)</span>
+        </label>
+        <input
+          id="semester-groups"
+          type="text"
+          value={data.student_groups || ''}
+          onChange={(e) => onChange('student_groups', e.target.value)}
+          placeholder="e.g. Honors, I2-1"
+          className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
+        />
+        <p className="text-xs text-slate-500 mt-1.5">
+          Comma-separated tags for your batches/electives (used to filter the timetable).
+        </p>
+      </div>
+
       {/* Helper note */}
       <p className="text-xs text-slate-500">
         Include the full semester range — from the first day of classes to the last. Holidays and exam periods are defined separately in the Semester Events step.

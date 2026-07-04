@@ -23,7 +23,7 @@ const TOTAL_DATA_STEPS = 5;
 const REVIEW_STEP = 6;
 
 const INITIAL_FORM_DATA = {
-  semester: { name: '', start_date: '', end_date: '' },
+  semester: { name: '', start_date: '', end_date: '', student_groups: '' },
   policy: { min_overall_percentage: 75, min_subject_percentage: 75 },
   subjects: [],
   timetable: [],
@@ -115,6 +115,9 @@ function SetupWizard() {
       // Step 1: Create semester
       const semesterPayload = {
         ...formData.semester,
+        student_groups: formData.semester.student_groups
+          ? formData.semester.student_groups.split(',').map((g) => g.trim()).filter(Boolean)
+          : [],
         min_overall_percentage: formData.policy.min_overall_percentage,
         min_subject_percentage: formData.policy.min_subject_percentage,
       };
@@ -147,6 +150,9 @@ function SetupWizard() {
           start_time: slot.start_time,
           end_time: slot.end_time,
           order_index: i,
+          required_groups: slot.required_groups
+            ? slot.required_groups.split(',').map((g) => g.trim()).filter(Boolean)
+            : [],
         };
         await createTimetableSlot(semesterId, slotPayload);
       }

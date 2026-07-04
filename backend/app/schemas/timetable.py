@@ -8,6 +8,7 @@ class TimetableSlotBase(BaseModel):
     start_time: time
     end_time: time
     order_index: int
+    required_groups: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def check_time(self) -> "TimetableSlotBase":

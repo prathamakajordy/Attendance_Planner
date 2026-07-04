@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Date, Float, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 import datetime as dt
+from sqlalchemy.dialects.sqlite import JSON
 from app.db.base import Base
 
 class SemesterProfile(Base):
@@ -12,6 +13,7 @@ class SemesterProfile(Base):
     end_date: Mapped[dt.date] = mapped_column(Date, nullable=False)
     min_overall_percentage: Mapped[float] = mapped_column(Float, nullable=False)
     min_subject_percentage: Mapped[float] = mapped_column(Float, nullable=False)
+    student_groups: Mapped[list[str]] = mapped_column(JSON, default=list, server_default='[]')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

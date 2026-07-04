@@ -8,6 +8,7 @@ class SemesterBase(BaseModel):
     end_date: date
     min_overall_percentage: float = Field(gt=0, le=100)
     min_subject_percentage: float = Field(gt=0, le=100)
+    student_groups: List[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def check_dates(self) -> "SemesterBase":
