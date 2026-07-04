@@ -13,6 +13,8 @@ import {
   createSubject,
   createTimetableSlot,
   createSemesterEvent,
+  generatePlan,
+  deleteSemester,
 } from '../../api/client';
 
 // The 5 data-entry step labels shown in the progress bar.
@@ -110,6 +112,7 @@ function SetupWizard() {
   const handleFinish = async () => {
     setIsSubmitting(true);
     setSubmitError(null);
+    let createdSemesterId = null;
 
     try {
       // Step 1: Create semester
@@ -122,6 +125,7 @@ function SetupWizard() {
         min_subject_percentage: formData.policy.min_subject_percentage,
       };
       const { data: createdSemester } = await createSemester(semesterPayload);
+      createdSemesterId = createdSemester.id;
       const semesterId = createdSemester.id;
 
       // Step 2: Create subjects (sequential; we need each subject's ID for timetable)
@@ -174,9 +178,21 @@ function SetupWizard() {
         await createSemesterEvent(semesterId, eventPayload);
       }
 
+      // Step 5: Generate the initial plan
+      await generatePlan(semesterId);
+
       // All done — redirect to dashboard with the new semester ID
       navigate(`/dashboard?semester=${semesterId}`);
     } catch (error) {
+      // If we created a semester but failed later, clean it up to prevent orphans
+      if (createdSemesterId) {
+        try {
+          await deleteSemester(createdSemesterId);
+        } catch (cleanupError) {
+          console.error("Failed to clean up orphaned semester:", cleanupError);
+        }
+      }
+
       // Surface the first structured API error message, or a generic fallback
       const apiErrors = error?.response?.data?.errors;
       if (apiErrors && apiErrors.length > 0) {
@@ -216,7 +232,7 @@ function SetupWizard() {
         )}
 
         {/* Step card */}
-        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
+        <div key={currentStep} className="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-300">
           {currentStep === 1 && (
             <StepSemesterDetails
               data={formData.semester}

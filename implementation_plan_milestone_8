@@ -1,0 +1,72 @@
+# Milestone 8: Production Readiness & Version 1.0 Release Preparation
+
+This document outlines the final review, audit, and polish plan to prepare the Attendance Planner for its stable Version 1.0 release. No new features will be introduced.
+
+## 1. Bug Audit
+- **Orphaned Semesters in Wizard**: If the `SetupWizard` fails halfway through submission (e.g., during timetable creation), the `Semester` and `Subjects` might already be created in the database. 
+  *Fix*: Improve error recovery by offering a "Retry" button that safely skips already created entities, or surface a clear error to the user to restart the process.
+- **Date Timezone Shifts**: Ensure JS Date handling in the frontend doesn't shift days by -1 depending on local timezone parsing from the backend's YYYY-MM-DD format.
+- **Empty Filters**: If a user filters by a Subject in the Calendar and no blocks exist, ensure the UI explicitly says "No blocks for this subject" rather than appearing broken.
+
+## 2. UI / UX Polish
+- **Setup Wizard Transitions**: Add smooth fade-ins for form steps to make the wizard feel premium.
+- **Dashboard Layout**: Ensure spacing between the `SummaryBanner`, `FeasibilityReport`, and `CalendarView` is consistent (e.g., uniform `gap-6`).
+- **Typography**: Verify that `SubjectNames` and `Explanations` do not break layout on extremely long string inputs. Add text-truncation (`truncate` / `line-clamp`) where necessary.
+
+## 3. Responsive Review
+- **Desktop (1024px+)**: The side-panel in `DayDetailsPanel` must not squash the 7-column calendar grid unreadably.
+- **Tablet (768px - 1024px)**: Calendar cells should scale font sizes down gracefully.
+- **Mobile (< 768px)**: 
+  - The 7-column calendar grid will use single-letter weekday abbreviations (S, M, T).
+  - The `DayDetailsPanel` must behave as a slide-up bottom sheet with a backdrop to prevent claustrophobic UI.
+  - Setup Wizard form inputs must maintain a minimum touch target height of `44px` (iOS Safari standards).
+
+## 4. Accessibility (a11y) Review
+- **Aria Labels**: Add `<button aria-label="Next Month">` to icon-only buttons (Calendar Navigation, Panel Close button, Wizard Delete buttons).
+- **Keyboard Navigation**: Ensure users can `Tab` through the Setup Wizard inputs and use `Enter` to submit forms.
+- **Focus States**: Ensure all interactive elements (buttons, inputs) have a visible `focus:ring` or `focus:outline`.
+- **Color Contrast**: Verify that the "Skip" (grey) and "Holiday" (orange) indicators meet WCAG AA contrast ratios against the dark `slate-900` background.
+
+## 5. Performance Review
+- **Frontend Re-renders**: The Calendar grid generates 42 cells. React `useMemo` is already used for grid generation. We will verify that toggling a filter does not cause the entire Dashboard layout to expensively re-mount.
+- **API Payloads**: The `GET /plan` endpoint fetches the entire semester. For a 120-day semester with 5 slots a day, this is ~600 blocks. SQLite and React can handle this instantly, but we will ensure compression (gzip) is enabled in production serving.
+
+## 6. Error Handling Review
+- **API Unavailable**: If the backend is down, catch the `ERR_CONNECTION_REFUSED` and display a friendly "Cannot connect to server. Please ensure the backend is running." instead of a raw Axios error.
+- **Impossible Attendance**: Ensure the `FeasibilityReport` red banner strictly explains *why* it is impossible (already handled by the backend's explanation generator).
+- **Empty Semester**: The wizard should strictly block submission if 0 subjects or 0 timetable slots are provided.
+
+## 7. End-to-End Testing Strategy
+A manual E2E runbook will be executed before final approval:
+1. **Fresh Start**: Delete `app.db`. Start backend and frontend.
+2. **Setup Wizard**: Create a semester with 3 subjects, 2 practical batches, and 1 holiday event.
+3. **Validation**: Attempt to submit invalid data (e.g., negative attendance requirement). Verify API rejects it.
+4. **Generation**: Submit the wizard, verify seamless routing to Dashboard, and verify the loading spinner.
+5. **Dashboard Interaction**: Click through 3 months of the calendar. Click a day, open details. Toggle filters.
+6. **Regeneration**: Add a new Event via API (or modify DB), click "Regenerate" on Dashboard, verify the plan updates seamlessly.
+
+## 8. Documentation Review
+Ensure the repository is perfectly documented for hand-off:
+- **README.md**: Add project overview, tech stack, and quickstart commands (`npm run dev`, `uvicorn`).
+- **ENGINE_ARCHITECTURE.md**: Ensure it perfectly reflects the frozen M4 state.
+- **API Documentation**: Rely on FastAPI's auto-generated `/docs` (Swagger UI), but ensure all endpoints have docstrings.
+
+## 9. Release Preparation (v1.0.0)
+**Version**: 1.0.0
+**Release Checklist**:
+- [ ] Complete Bug Audit & Fixes
+- [ ] Apply UX/UI Polish
+- [ ] Verify A11y & Responsiveness
+- [ ] Complete E2E Manual Test Run
+- [ ] Finalize `README.md`
+- [ ] Build production frontend asset bundle.
+
+**Future Roadmap (Not for V1.0)**:
+- Multiple semester management (Switching between Sem 1, Sem 2).
+- Dashboard editing of Events and Timetables (currently requires DB reset/API access).
+- OAuth / User Authentication.
+- Push Notifications or email alerts for attendance warnings.
+- Real-time attendance logging (marking present/absent on a specific past day).
+
+## 10. Completion Criteria
+Milestone 8 is complete only if all reviews are executed, issues patched, testing passes, and the v1.0.0 release notes/documentation are signed off by the user.

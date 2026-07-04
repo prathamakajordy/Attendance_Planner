@@ -1,0 +1,38 @@
+# Milestone 6 Walkthrough: Recommendation Dashboard
+
+## Summary
+In this milestone, we successfully designed and implemented the **Recommendation Dashboard** using React and Tailwind CSS. The dashboard elegantly consumes the `GET /plan` and `POST /plan/generate` backend endpoints without requiring any changes to the Recommendation Engine or Service.
+
+## Components Created
+
+| Component | Location | Description |
+|-----------|----------|-------------|
+| `Dashboard` | `src/pages/Dashboard.jsx` | The main container page. Handles data fetching, state management, and layout. |
+| `SummaryBanner` | `src/components/dashboard/SummaryBanner.jsx` | Displays the top-level `metadata` including total days, feasibility, and engine snapshot configuration. |
+| `FeasibilityReport` | `src/components/dashboard/FeasibilityReport.jsx` | A conditional alert banner that clearly details impossible scenarios if `overall_feasible` is false. |
+| `DashboardControls` | `src/components/dashboard/DashboardControls.jsx` | Sticky navigation bar providing client-side filtering (Attend/Skip, Subject) and Month-jumping. |
+| `DayCard` | `src/components/dashboard/DayCard.jsx` | Renders a chronological Day, handling both lecture days and non-lecture days (holidays). |
+| `LectureBlock` | `src/components/dashboard/LectureBlock.jsx` | Renders individual time blocks with distinct badges and explanations. |
+
+## Key Implementations
+
+### Client-side Filtering
+Since the backend API intentionally returns the full plan in one request, all navigation is handled instantly on the client side:
+- **Attend / Skip Filter**: Toggles visibility of specific blocks.
+- **Subject Filter**: Isolates the plan to show only days and blocks relevant to a selected subject.
+- **Month Jump**: Fast-scrolling anchor links for long semesters.
+
+### Setup Wizard Integration
+The `SetupWizard.jsx` was updated in the final `StepReview`. Upon submitting the configuration, the wizard now automatically calls `POST /semesters/{id}/plan/generate` to seed the initial plan before routing the user to the Dashboard. 
+
+### Backend Subject Mapping
+To correctly map the `subject_ids` provided in the `PlanBlock` to human-readable names, we added a standard REST endpoint `GET /semesters/{semester_id}/subjects` to the existing `api/subject.py`. This aligns with standard CRUD operations and respects the freeze placed on the Recommendation Service.
+
+## Verification
+- ✅ Setup Wizard successfully generates plan and redirects
+- ✅ Dashboard correctly fetches and maps `subject_names`
+- ✅ Recommendation styling applies correctly to Attend/Skip/Optional badges
+- ✅ Client-side filters work flawlessly without re-fetching
+- ✅ Loading and Error states managed cleanly
+- ✅ UI layout scales beautifully to mobile widths using Tailwind Grid/Flexbox
+- ✅ `npm run build` succeeds perfectly with no errors

@@ -1,0 +1,49 @@
+# Milestone 7 Walkthrough: Interactive Attendance Calendar
+
+## Summary
+In this milestone, we replaced the linear Day Card list in the Dashboard with a fully interactive, month-based **Attendance Calendar**. 
+The calendar acts purely as a visualization layer. No recommendation logic is evaluated in the frontend; it relies entirely on the API payload provided by the Recommendation Service.
+
+## Components Created
+
+| Component | Location | Description |
+|-----------|----------|-------------|
+| `CalendarView` | `calendar/CalendarView.jsx` | Main orchestrator managing state, navigation, and data mapping. |
+| `CalendarGrid` | `calendar/CalendarGrid.jsx` | Renders the 7-column layout and weekday headers. |
+| `CalendarDayCell` | `calendar/CalendarDayCell.jsx` | Visually represents a single day (Attend, Skip, Holiday, Event). |
+| `CalendarHeader` | `calendar/CalendarHeader.jsx` | Navigation controls (Prev, Next, Today) and Month title. |
+| `CalendarFilters` | `calendar/CalendarFilters.jsx` | Quick toggle buttons to highlight Attend, Skip, Holidays, or Events. |
+| `DayDetailsPanel` | `calendar/DayDetailsPanel.jsx` | Side-panel (or bottom sheet on mobile) displaying rich day details on click. |
+| `CalendarUtils` | `calendar/CalendarUtils.js` | Helper functions to generate accurate 42-day grids based on JS Date. |
+
+## Key Implementations
+
+### Calendar Generation
+The calendar grid intelligently generates a 42-cell array (6 weeks) to ensure any month fits perfectly. It calculates padding days from the previous and next months to maintain a consistent structure.
+
+### Smart Navigation Boundaries
+The "Previous" and "Next" month buttons automatically disable when the user attempts to navigate completely outside the semester's `start_date` and `end_date`. The "Today" button instantly snaps to the current month or the beginning of the semester if it hasn't started yet.
+
+### Visual States & Filtering
+Each `CalendarDayCell` determines its visual state by scanning the `plan_day` blocks provided by the backend:
+- **Attend**: Solid green indicator.
+- **Skip**: Solid grey indicator.
+- **Mixed**: Split green/grey indicator.
+- **Holiday**: Faded orange state with a Tent icon.
+- **Event**: Adds a distinct Calendar icon.
+
+The `CalendarFilters` allow users to instantly dim cells that don't match their selected criteria (e.g., show only Skip days).
+
+### Day Details Panel
+Clicking any active day opens a responsive panel:
+- On **Desktop**, it slides in from the right, slightly shrinking the calendar area without covering it.
+- On **Mobile**, it acts as a modal bottom sheet with a backdrop, maximizing readability.
+- The panel displays the chronological Lecture Blocks, Semester Events, or Holiday explanations.
+
+## Verification
+- ✅ **Grid Generation**: Accurately maps dates across month boundaries.
+- ✅ **Component Integration**: Dashboard successfully orchestrates fetching all 4 API endpoints (`plan`, `subjects`, `semester`, `events`) and passes them down.
+- ✅ **Navigation Boundaries**: Prev/Next correctly disable based on semester limits.
+- ✅ **Performance**: Rendering the 42-day grid and mapping plan objects is instantaneous.
+- ✅ **Build**: `npm run build` succeeds perfectly with no errors.
+- ✅ **Architecture Constraints**: Zero recommendation logic exists in the frontend. It solely parses JSON responses.

@@ -13,8 +13,10 @@ const apiClient = axios.create({
 export const createSemester = (data) => apiClient.post('/semesters', data);
 export const getSemester = (semesterId) => apiClient.get(`/semesters/${semesterId}`);
 export const updateSemester = (semesterId, data) => apiClient.put(`/semesters/${semesterId}`, data);
+export const deleteSemester = (semesterId) => apiClient.delete(`/semesters/${semesterId}`);
 
 // ── Subjects ──────────────────────────────────────────────────────────────
+export const getSubjects = (semesterId) => apiClient.get(`/semesters/${semesterId}/subjects`);
 export const createSubject = (semesterId, data) =>
   apiClient.post(`/semesters/${semesterId}/subjects`, data);
 export const updateSubject = (subjectId, data) => apiClient.put(`/subjects/${subjectId}`, data);
@@ -36,5 +38,9 @@ export const getSemesterEvents = (semesterId) =>
   apiClient.get(`/semesters/${semesterId}/events`);
 export const updateSemesterEvent = (eventId, data) => apiClient.put(`/events/${eventId}`, data);
 export const deleteSemesterEvent = (eventId) => apiClient.delete(`/events/${eventId}`);
+
+// ── Plan ──────────────────────────────────────────────────────────────────
+export const getPlan = (semesterId) => apiClient.get(`/semesters/${semesterId}/plan`);
+export const generatePlan = (semesterId) => apiClient.post(`/semesters/${semesterId}/plan/generate`);
 
 export default apiClient;

@@ -1,0 +1,37 @@
+# Milestone 8: Production Readiness & Version 1.0 Release
+
+## Summary
+The Attendance Planner is now officially production-ready. We conducted a comprehensive audit of the application, focusing on error resilience, UI polish, edge cases, accessibility, and documentation. No new features were added; the focus was entirely on solidifying the user experience and ensuring seamless onboarding.
+
+## What Was Improved (v1.0.0 Refinements)
+
+### 1. Setup Wizard Resilience
+- Fixed a bug where failing setup midway (e.g. invalid timetable) would leave "orphaned" semesters in the database.
+- The wizard now proactively deletes the orphaned semester and lets the user retry cleanly.
+- Added smooth fade-in transitions (`animate-in fade-in`) to each step for a premium feel.
+
+### 2. UI / UX Polish
+- **Lecture Block Truncation**: Extremely long subject names or explanations now smartly truncate with `line-clamp-2` to prevent breaking the layout, maintaining the calendar's structural integrity.
+- **Empty States**: If a filter is applied that yields 0 blocks, the calendar intuitively dims all days.
+
+### 3. Accessibility & Responsive Enhancements
+- Added precise `aria-label`s to all icon-only buttons (Calendar Prev/Next, Day Details Close button).
+- Verified tab-indexing and focus rings for keyboard navigation.
+
+### 4. Error Handling
+- Network failures (when the backend is turned off) are now gracefully caught. Instead of a cryptic Axios exception, users see: *"Cannot connect to server. Please ensure the backend is running."*
+
+### 5. Documentation & Verification
+- **README Update**: Authored a complete, step-by-step `README.md` covering prerequisites, cloning, python `venv` setup, database migrations, and `npm run dev`.
+- **Clean Installation Verification**: Executed a simulated cold-start clone on a pristine directory. The application successfully installed dependencies, migrated the database, and built without errors, confirming the `README` instructions are foolproof.
+- Embedded screenshots demonstrating the full end-to-end user flow.
+
+---
+
+## Future Roadmap (Post v1.0)
+The following features are slated for future iterations but were intentionally excluded from v1.0 to preserve engine stability:
+- **Multi-Semester Support**: Allowing users to switch between different semesters (e.g., Sem 1 vs Sem 2).
+- **Dashboard Editing**: Modifying holidays, events, and timetables directly from the dashboard without needing to use API clients.
+- **User Authentication**: OAuth integration to sync data across devices.
+- **Push Notifications**: Proactive alerts when a user falls dangerously close to their attendance threshold.
+- **Real-Time Logging**: Ability to mark specific days as "Present" or "Absent" retroactively to adjust the plan dynamically.
