@@ -1,0 +1,33 @@
+# Attendance Planner AI - Implementation Plan
+
+This document summarizes the overall understanding of the Attendance Planner AI based on the SRD, TRD, and ADD, and outlines the plan to execute the project milestone by milestone.
+
+## Overall Understanding
+
+**Core Purpose**: Attendance Planner AI is a local-first, zero-budget, deterministic attendance recommendation system for students. Unlike standard trackers, it provides a concrete block-by-block and day-by-day Attend/Skip/Optional schedule, ensuring hard policy minimums are never violated while minimizing unnecessary campus time.
+
+**Algorithm Philosophy**: 
+- The engine uses a deterministic, rule-based approach (no LLMs/ML).
+- It performs a pipeline: Event Resolution -> Calendar Expansion -> Requirement Calculation -> Greedy Slot Selection -> Block Consolidation (never sandwiching a skip) -> Explanation Generation.
+- It is heavily modularized within the `engine/` package, decoupled from HTTP and DB concerns.
+
+**Tech Stack**:
+- **Backend**: Python (FastAPI, SQLAlchemy, Pydantic, Uvicorn), SQLite DB.
+- **Frontend**: React SPA (Vite, Tailwind CSS, FullCalendar, Chart.js, Axios).
+- **Architecture**: A stateless backend process interacting with a single SQLite file (`app.db`). The frontend is a single-user SPA with no server-side auth for the MVP.
+
+## Milestone Plan
+
+As per SRD Section 28, the development will be divided into 13 milestones (M0 to M12). We will tackle these strictly one by one.
+
+### First Target: Milestone M0 — Project Scaffolding
+- Initialize the directory structure (`backend/` and `frontend/`).
+- Setup Python environment, `requirements.txt`, FastAPI skeleton, and SQLite SQLAlchemy configuration.
+- Setup React frontend via Vite with Tailwind CSS configuration.
+- Create initial configuration files (`.env.example`, `pytest.ini`).
+
+*Future milestones (M1 to M12) will be detailed and executed iteratively after the completion of M0.*
+
+## User Review Required
+
+Please review my understanding of the system. If this high-level summary and the proposal to begin with **M0 — Project Scaffolding** aligns with your expectations, please approve to allow me to start writing code for M0. Once M0 is complete, I will pause and present the plan for M1.

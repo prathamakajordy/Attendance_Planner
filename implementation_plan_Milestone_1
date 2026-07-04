@@ -1,0 +1,341 @@
+# Attendance Planner AI - Milestone 1 Implementation Plan
+
+This document outlines the detailed implementation plan for **Milestone 1 (M1) — Data Entry Backend** exactly as requested. It is based strictly on the v1.0 SRD, TRD, and ADD.
+
+---
+
+## 1. Database Schema
+
+The SQLite database will consist of the following tables for Milestone 1. *(Note: `plan_day`, `plan_block`, and `plan_slot_outcome` belong to the recommendation engine outputs and will be created now for completeness but utilized in later milestones.)*
+
+### Table: `semester_profile`
+* **Purpose**: Stores the configuration and boundary dates for a specific semester.
+* **Columns**:
+  * `id`: INTEGER, Not Null, Primary Key, Auto-increment
+  * `name`: TEXT, Not Null (e.g., "Sem IV 2026")
+  * `start_date`: DATE, Not Null
+  * `end_date`: DATE, Not Null
+  * `min_overall_percentage`: REAL, Not Null
+  * `min_subject_percentage`: REAL, Not Null
+  * `created_at`: DATETIME, Not Null, Default: CURRENT_TIMESTAMP
+  * `updated_at`: DATETIME, Not Null, Default: CURRENT_TIMESTAMP
+* **Constraints**: `end_date` >= `start_date`, percentages between 0 and 100.
+
+### Table: `subject`
+* **Purpose**: Tracks attendance status for each subject in a semester.
+* **Columns**:
+  * `id`: INTEGER, Not Null, Primary Key, Auto-increment
+  * `semester_id`: INTEGER, Not Null, Foreign Key (`semester_profile.id`) ON DELETE CASCADE
+  * `name`: TEXT, Not Null
+  * `code`: TEXT, Nullable
+  * `min_percentage_override`: REAL, Nullable
+  * `held_count`: INTEGER, Not Null, Default: 0
+  * `present_count`: INTEGER, Not Null, Default: 0
+* **Constraints**: `held_count` >= 0, `present_count` >= 0, `present_count` <= `held_count`.
+
+### Table: `timetable_slot`
+* **Purpose**: Represents a weekly recurring lecture slot.
+* **Columns**:
+  * `id`: INTEGER, Not Null, Primary Key, Auto-increment
+  * `semester_id`: INTEGER, Not Null, Foreign Key (`semester_profile.id`) ON DELETE CASCADE
+  * `subject_id`: INTEGER, Not Null, Foreign Key (`subject.id`) ON DELETE CASCADE
+  * `weekday`: INTEGER, Not Null (0 = Monday, 6 = Sunday)
+  * `start_time`: TEXT (HH:MM), Not Null
+  * `end_time`: TEXT (HH:MM), Not Null
+  * `order_index`: INTEGER, Not Null
+* **Indexes**: `idx_timetable_semester` on `(semester_id, weekday)`
+* **Constraints**: `start_time` < `end_time`. No overlapping slots on the same `weekday` for the same `semester_id`. `weekday` BETWEEN 0 AND 6.
+
+### Table: `event_type_definition`
+* **Purpose**: A reference table storing event type presets and their default impact flags.
+* **Columns**:
+  * `id`: INTEGER, Not Null, Primary Key, Auto-increment
+  * `key`: TEXT, Not Null, Unique
+  * `label`: TEXT, Not Null
+  * `is_system_preset`: BOOLEAN, Not Null, Default: 0
+  * `default_cancels_lectures`: BOOLEAN, Not Null, Default: 1
+  * `default_counts_towards_attendance`: BOOLEAN, Not Null, Default: 0
+  * `default_is_working_day`: BOOLEAN, Not Null, Default: 1
+  * `default_exclude_from_recommendation`: BOOLEAN, Not Null, Default: 1
+
+### Table: `semester_event`
+* **Purpose**: Stores specific events created by the user that impact the schedule.
+* **Columns**:
+  * `id`: INTEGER, Not Null, Primary Key, Auto-increment
+  * `semester_id`: INTEGER, Not Null, Foreign Key (`semester_profile.id`) ON DELETE CASCADE
+  * `event_type_id`: INTEGER, Not Null, Foreign Key (`event_type_definition.id`)
+  * `custom_type_label`: TEXT, Nullable (Required if `event_type_id` refers to 'custom')
+  * `name`: TEXT, Not Null
+  * `start_date`: DATE, Not Null
+  * `end_date`: DATE, Not Null
+  * `description`: TEXT, Nullable
+  * `cancels_lectures_override`: BOOLEAN, Nullable
+  * `counts_towards_attendance_override`: BOOLEAN, Nullable
+  * `is_working_day_override`: BOOLEAN, Nullable
+  * `exclude_from_recommendation_override`: BOOLEAN, Nullable
+  * `created_at`: DATETIME, Default: CURRENT_TIMESTAMP
+  * `updated_at`: DATETIME, Default: CURRENT_TIMESTAMP
+* **Indexes**: `idx_semester_event_semester_dates` on `(semester_id, start_date, end_date)`
+* **Constraints**: `end_date` >= `start_date`.
+
+---
+
+## 2. Entity Relationships
+
+* **SemesterProfile to Subject**: One-to-Many. A semester has many subjects. Deleting a semester deletes its subjects.
+* **SemesterProfile to TimetableSlot**: One-to-Many. A semester has a weekly timetable. Deleting a semester deletes its timetable slots.
+* **SemesterProfile to SemesterEvent**: One-to-Many. A semester contains many events. Deleting a semester deletes its events.
+* **Subject to TimetableSlot**: One-to-Many. A subject is taught in multiple time slots per week. Deleting a subject removes its timetable occurrences.
+* **EventTypeDefinition to SemesterEvent**: One-to-Many. Many events can use the same event type preset. (No cascade delete allowed on system presets).
+
+```mermaid
+erDiagram
+    SEMESTER_PROFILE ||--o{ SUBJECT : "has"
+    SEMESTER_PROFILE ||--o{ TIMETABLE_SLOT : "has"
+    SEMESTER_PROFILE ||--o{ SEMESTER_EVENT : "has"
+    SUBJECT ||--o{ TIMETABLE_SLOT : "scheduled as"
+    EVENT_TYPE_DEFINITION ||--o{ SEMESTER_EVENT : "defines type for"
+
+    SEMESTER_PROFILE {
+        int id PK
+        string name
+        date start_date
+        date end_date
+        float min_overall_percentage
+        float min_subject_percentage
+    }
+    SUBJECT {
+        int id PK
+        int semester_id FK
+        string name
+        string code
+        float min_percentage_override
+        int held_count
+        int present_count
+    }
+    TIMETABLE_SLOT {
+        int id PK
+        int semester_id FK
+        int subject_id FK
+        int weekday
+        string start_time
+        string end_time
+        int order_index
+    }
+    EVENT_TYPE_DEFINITION {
+        int id PK
+        string key
+        string label
+        bool is_system_preset
+        bool default_cancels_lectures
+        bool default_counts_towards_attendance
+        bool default_is_working_day
+        bool default_exclude_from_recommendation
+    }
+    SEMESTER_EVENT {
+        int id PK
+        int semester_id FK
+        int event_type_id FK
+        string custom_type_label
+        string name
+        date start_date
+        date end_date
+        string description
+        bool cancels_lectures_override
+        bool counts_towards_attendance_override
+        bool is_working_day_override
+        bool exclude_from_recommendation_override
+    }
+```
+
+---
+
+## 3. SQLAlchemy Models
+
+The following SQLAlchemy 2.x declarative models will be implemented in `backend/app/models/`:
+
+1. **`SemesterProfile`**
+   * **Fields**: `id`, `name`, `start_date`, `end_date`, `min_overall_percentage`, `min_subject_percentage`, `created_at`, `updated_at`.
+   * **Relationships**: `subjects`, `timetable_slots`, `events` (all `cascade="all, delete-orphan"`).
+   * **Why**: Core anchor entity that groups all configuration and data for a specific term.
+
+2. **`Subject`**
+   * **Fields**: `id`, `semester_id`, `name`, `code`, `min_percentage_override`, `held_count`, `present_count`.
+   * **Relationships**: `semester`, `timetable_slots` (implied backwards relation).
+   * **Why**: Tracks state of attendance per class.
+
+3. **`TimetableSlot`**
+   * **Fields**: `id`, `semester_id`, `subject_id`, `weekday`, `start_time`, `end_time`, `order_index`.
+   * **Relationships**: `semester`, `subject`.
+   * **Why**: Represents the weekly recurring schedule without duplicating data for every single calendar day.
+
+4. **`EventTypeDefinition`**
+   * **Fields**: `id`, `key`, `label`, `is_system_preset`, default flag booleans.
+   * **Why**: Seeded reference table that ensures logic for "holidays", "exams", etc., is decoupled from code and driven entirely by configurable impact flags.
+
+5. **`SemesterEvent`**
+   * **Fields**: `id`, `semester_id`, `event_type_id`, `custom_type_label`, `name`, `start_date`, `end_date`, `description`, and the four nullable override flags.
+   * **Relationships**: `semester`, `event_type`.
+   * **Why**: Models exceptions and calendar modifications robustly without hardcoding college-specific event structures.
+
+*Note: Validation (e.g. `end_date` >= `start_date`) will be handled both by SQLAlchemy DB constraints (`CheckConstraint`) and Pydantic schema logic.*
+
+---
+
+## 4. API Design
+
+### 1. Create Semester
+* **Method/URL**: `POST /api/v1/semesters`
+* **Purpose**: Create a new semester profile.
+* **Request**: `{"name": "Sem 1", "start_date": "2026-08-01", "end_date": "2026-12-01", "min_overall_percentage": 75.0, "min_subject_percentage": 75.0}`
+* **Response**: Full semester object (201 Created).
+* **Errors**: 422 (Validation failed, e.g., end_date before start_date).
+
+### 2. Get Semester
+* **Method/URL**: `GET /api/v1/semesters/{id}`
+* **Purpose**: Retrieve semester config.
+* **Response**: Full semester object (200 OK).
+* **Errors**: 404 (Not Found).
+
+### 3. Update Semester
+* **Method/URL**: `PUT /api/v1/semesters/{id}`
+* **Purpose**: Update dates or policies.
+* **Request**: Same as POST.
+* **Response**: Updated semester object (200 OK).
+* **Errors**: 404, 422.
+
+### 4. Create Subject
+* **Method/URL**: `POST /api/v1/semesters/{id}/subjects`
+* **Request**: `{"name": "DBMS", "code": "CS101", "held_count": 10, "present_count": 8}`
+* **Response**: Created subject (201 Created).
+
+### 5. Update/Delete Subject
+* **Method/URL**: `PUT /api/v1/subjects/{id}`, `DELETE /api/v1/subjects/{id}`
+* **Responses**: Updated object (200 OK), or Empty (204 No Content).
+
+### 6. Create Timetable Slot
+* **Method/URL**: `POST /api/v1/semesters/{id}/timetable`
+* **Request**: `{"subject_id": 1, "weekday": 0, "start_time": "09:00", "end_time": "10:00", "order_index": 1}`
+* **Response**: Created slot (201 Created).
+
+### 7. Update/Delete Timetable Slot
+* **Method/URL**: `PUT /api/v1/timetable/{id}`, `DELETE /api/v1/timetable/{id}`
+* **Responses**: 200 OK / 204 No Content.
+
+### 8. Get Event Types
+* **Method/URL**: `GET /api/v1/event-types`
+* **Response**: `[{"id": 1, "key": "holiday", "label": "Holiday", ...}]` (200 OK).
+
+### 9. Create Semester Event
+* **Method/URL**: `POST /api/v1/semesters/{id}/events`
+* **Request**: `{"name": "Mid Sem", "event_type_id": 2, "start_date": "2026-09-01", "end_date": "2026-09-05"}`
+* **Response**: Created event with resolved flags attached (201 Created).
+
+### 10. List/Update/Delete Semester Events
+* **Method/URL**: `GET /api/v1/semesters/{id}/events`, `PUT /api/v1/events/{id}`, `DELETE /api/v1/events/{id}`
+* **Responses**: 200 OK, 204 No Content.
+
+---
+
+## 5. Validation Rules
+
+All rules below will be implemented via Pydantic (`@model_validator`) and SQLAlchemy `CheckConstraint`s:
+
+1. **Semester Profile**: `end_date` must be after `start_date`.
+2. **Percentages**: `min_overall_percentage` and `min_subject_percentage` must be in the range (0, 100].
+3. **Subject**: `held_count` >= 0, `present_count` >= 0.
+4. **Subject Logic**: `present_count` cannot exceed `held_count`.
+5. **Subject Strings**: Subject names cannot be empty. Duplicate subject names per semester are restricted.
+6. **Timetable Slot**: `start_time` must be strictly less than `end_time`.
+7. **Timetable Overlaps**: No two slots for the same `semester_id` and `weekday` may overlap in time.
+8. **Timetable Boundaries**: `weekday` must be between 0 (Monday) and 6 (Sunday).
+9. **Semester Event Dates**: `end_date` must be on or after `start_date`.
+10. **Semester Event Bounds**: `start_date` must be >= `semester.start_date` (if extending past `end_date`, it is allowed but warns).
+11. **Event Types**: If `event_type_id` points to 'custom', `custom_type_label` MUST be provided and non-empty. Otherwise, it must be null.
+
+---
+
+## 6. Folder Structure
+
+* `backend/app/db/session.py`: Database engine and connection setup.
+* `backend/app/db/base.py`: SQLAlchemy Base declarative class.
+* `backend/app/db/seed_event_types.py`: Startup script to inject the 12 SRD Event Type Presets idempotently.
+* `backend/app/core/config.py`: Environment variable loading.
+* `backend/app/core/exceptions.py`: Custom HTTP-mapped exceptions (`ValidationFailedError`).
+* `backend/app/models/semester.py`, `subject.py`, `timetable.py`, `event_type_definition.py`, `semester_event.py`: SQLAlchemy schemas.
+* `backend/app/schemas/semester.py`, `subject.py`, `timetable.py`, `event_type.py`, `semester_event.py`: Pydantic models for I/O validation.
+* `backend/app/api/semester.py`, `subject.py`, `timetable.py`, `event_types.py`, `semester_events.py`: FastAPI route handlers.
+* `backend/app/main.py`: Updated to include routers and global exception handlers.
+
+---
+
+## 7. Database Migration Strategy
+
+* **Initialization**: SQLite will be used (`app.db`).
+* **Alembic**: Alembic will be configured and initialized in the `backend/alembic/` directory.
+* **Migrations**: We will generate an initial migration script (`alembic revision --autogenerate -m "init_schema"`) which captures all M1 models.
+* **Future Changes**: Any future schema tweaks will use standard Alembic workflow (`alembic revision` -> `alembic upgrade head`), keeping the database state strictly version-controlled.
+
+---
+
+## 8. Testing Plan
+
+* **Unit Tests**:
+  * Pydantic validation checks (valid/invalid dates, negative counts, overlaps).
+  * Check that `seed_event_types` works idempotently without duplicating presets.
+* **API Tests (Integration)**:
+  * Using `FastAPI TestClient` and an in-memory SQLite DB.
+  * Complete CRUD flows for Semesters, Subjects, Timetable Slots, and Events.
+  * Asserts for HTTP 201, 200, 404 (not found), and 422 (validation errors).
+* **Manual Testing Steps**:
+  * Spin up the uvicorn server.
+  * Use the `/docs` Swagger UI to create a semester.
+  * Attempt to create a subject with `present_count` > `held_count` and verify a 422 rejection.
+  * Insert a valid timetable slot, then attempt to insert an overlapping slot and verify rejection.
+  * Fetch event types and confirm 12 presets are present.
+  * Create a custom event and ensure `resolved_*` flags correctly fall back to default or override values.
+
+---
+
+## 9. Assumptions
+
+* **No external assumptions**: I am relying strictly on the rules explicitly provided in the SRD, TRD, and ADD.
+* **Constraint Implementation**: Enforcing "no overlapping timetable slots" on write will be done defensively in the API layer before database commit, as complex temporal overlap checks are harder to enforce natively in standard SQLite without custom triggers.
+* If any conflict or ambiguity arises during coding, I will stop and ask you before proceeding.
+
+---
+
+## 10. Scope Verification
+
+I explicitly confirm that **Milestone 1 will ONLY implement**:
+* Database initialization
+* SQLAlchemy Models
+* Pydantic Schemas
+* CRUD APIs
+* Data Validation
+* Basic persistence (SQLite + Alembic)
+
+Milestone 1 **will NOT implement**:
+* The Recommendation Engine
+* The optimization logic
+* Calendar expansion or planning algorithms
+* Explanations or dashboard views
+(These belong to later milestones).
+
+---
+
+## 11. Completion Criteria
+
+Milestone 1 is considered complete **only when**:
+1. All SQLAlchemy models match the SRD specification.
+2. All FastAPI CRUD endpoints for Data Entry are implemented and functional.
+3. All SRD Section 19 validation rules are actively enforced.
+4. The 12 event type presets automatically seed into the database on startup.
+5. All integration tests pass.
+6. The SQLite schema is successfully tracked by Alembic.
+
+---
+
+## Requesting Approval
+
+Please review the detailed plan for Milestone 1. If everything aligns with your requirements, approve this plan, and I will begin implementing the codebase.

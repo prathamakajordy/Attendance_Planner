@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-attend-green: #22c55e;
+  --color-skip-red: #ef4444;
+  --color-optional-yellow: #facc15;
+  --color-gray-200: #e5e7eb;
+}
