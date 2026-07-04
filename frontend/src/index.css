@@ -1,10 +1,16 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 :root {
   --color-attend-green: #22c55e;
   --color-skip-red: #ef4444;
   --color-optional-yellow: #facc15;
   --color-gray-200: #e5e7eb;
+}
+
+/* Global base styles */
+body {
+  background-color: #0f172a;
+  color: #e2e8f0;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }

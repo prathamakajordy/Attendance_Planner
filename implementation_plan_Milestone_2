@@ -1,0 +1,417 @@
+# M2 – Setup Wizard Frontend: Implementation Plan
+
+**Role**: Senior Frontend Engineer  
+**Status**: STEP 2 — Implementation Plan. No code written. Awaiting approval.
+
+---
+
+## Step 1 — Think: What I Read and What I Understood
+
+### What M2 Is
+
+SRD Section 20, Screen 1 defines the Setup Wizard as:
+
+> "multi-step form: Semester Dates → Policy → Timetable Builder → Attendance Entry → Semester Events (add as many as needed via 'Add Semester Event'; can be skipped/added later)"
+
+SRD Section 10 (Complete User Flow) describes the exact order:
+
+1. Enter semester start date and end date.
+2. Enter attendance policy (overall %, subject %).
+3. Build weekly timetable (per weekday, add lecture slots with subject/start/end).
+4. Enter current attendance per subject (held/present, or percentage fallback).
+5. Add Semester Events as needed — choose a preset type or custom type, set dates, confirm/override the attendance-impact flags.
+
+This is the onboarding experience. The wizard collects ALL data required before a plan can be generated. It wires into the M1 backend APIs.
+
+### What M2 Is NOT
+
+M2 does **not** implement:
+
+- Dashboard
+- Recommendation Engine
+- Calendar View
+- Subject View
+- Timeline View
+- Semester Events Manager page (the standalone post-wizard editor)
+- The Recalculate flow
+
+These belong to later milestones.
+
+### Key Risks I Identified
+
+1. **The Semester Events step is more complex than a typical form step.** The SRD defines four attendance-impact flag overrides per event, defaulted from the selected event type. The frontend must pre-fill toggles from the API, not hardcode them.
+
+2. **API sequencing on submit matters.** Subjects must be created before timetable slots (timetable slots reference `subject_id`). Semester creation must happen first before subjects or events can be created (they reference `semester_id`). This means the final submit must be sequential, not parallel.
+
+3. **The wizard must be usable for a mid-semester setup.** The SRD says the user can enter held/present counts if the semester has already started. The form must accommodate `held_count = 0` (new student) and `held_count > 0` with a valid `present_count <= held_count`.
+
+4. **Time overlap validation for timetable slots** is required by the SRD (Section 19) and must be enforced on the frontend before sending to the backend.
+
+5. **The Semester Events step is optional** — the SRD explicitly says events "can be skipped/added later." The wizard must allow skipping this step gracefully.
+
+6. **Custom event type**: when event type key is `custom`, the UI must require a `custom_type_label`. This is a SRD Section 19 validation rule.
+
+---
+
+## Step 2 — Explain: Complete Implementation Plan
+
+---
+
+### 2.1 Architecture Decision
+
+**Single-page wizard, local form state, sequential API submission on final step.**
+
+**Why this architecture:**
+
+- The TRD (Section 11) confirms: "No global state library (Redux/Zustand) is needed at MVP scale." Local React state per step is sufficient.
+- Data is committed to the API only on final "Finish" — not step-by-step. This avoids creating a half-configured semester in the database if the user abandons setup halfway.
+- This is the simplest implementation that satisfies the documentation and is appropriate for a solo developer.
+
+**Why NOT step-by-step API commits:**
+
+- Step-by-step commits would require cleanup logic if the user exits mid-wizard, adding complexity with no SRD-documented benefit.
+
+---
+
+### 2.2 Wizard Steps (Exactly 5, Per SRD Section 20)
+
+| Step # | Name | SRD Source |
+|---|---|---|
+| 1 | Semester Details | SRD Section 10.1.a — Semester start/end date |
+| 2 | Attendance Policy | SRD Section 10.1.b — Min overall %, min subject % |
+| 3 | Subjects & Attendance | SRD Section 10.1.d — Subject name, code, held/present |
+| 4 | Weekly Timetable | SRD Section 10.1.c — Per weekday, slots with subject/time |
+| 5 | Semester Events | SRD Section 10.1.e — Event type, dates, flag overrides (optional/skippable) |
+
+A final **Review & Submit** screen summarizes all entered data before the API calls are made.
+
+**Why this specific step order?**
+
+The SRD defines it explicitly. Timetable is Step 4 (not Step 3) because you need Subjects defined first — each timetable slot references a `subject_id`, and users will select subjects from a dropdown in the timetable builder. Subjects must exist in local state before the timetable step renders.
+
+---
+
+### 2.3 Component Hierarchy
+
+```
+App.jsx
+└── Routes
+    └── /setup → SetupWizard.jsx
+        ├── WizardProgressBar.jsx       (shows 5 steps, highlights current)
+        ├── StepSemesterDetails.jsx     (Step 1)
+        ├── StepAttendancePolicy.jsx    (Step 2)
+        ├── StepSubjects.jsx            (Step 3)
+        ├── StepTimetable.jsx           (Step 4)
+        │   └── TimetableSlotRow.jsx    (reusable row for each slot)
+        ├── StepEvents.jsx              (Step 5 — optional)
+        │   └── EventFormModal.jsx      (add/edit a single event)
+        ├── StepReview.jsx              (Review screen)
+        └── WizardNavButtons.jsx        (Back / Next / Skip / Finish)
+```
+
+**Design principles:**
+- `SetupWizard.jsx` is the single state holder. It owns ALL form data and passes down slices as props.
+- Each step component receives its data slice and an `onChange` callback.
+- No step communicates directly with another step.
+- Each step validates its own fields; the parent (`SetupWizard`) only calls the step's `validate()` method before advancing.
+
+---
+
+### 2.4 Folder Structure
+
+All new files for M2 live under `frontend/src/`:
+
+```
+frontend/src/
+├── api/
+│   └── client.js                    ← Axios instance (VITE_API_BASE_URL)
+├── pages/
+│   └── wizard/
+│       ├── SetupWizard.jsx          ← State owner, step router
+│       ├── StepSemesterDetails.jsx  ← Step 1
+│       ├── StepAttendancePolicy.jsx ← Step 2
+│       ├── StepSubjects.jsx         ← Step 3
+│       ├── StepTimetable.jsx        ← Step 4
+│       ├── StepEvents.jsx           ← Step 5
+│       └── StepReview.jsx           ← Review & Submit
+├── components/
+│   └── wizard/
+│       ├── WizardProgressBar.jsx    ← Step progress indicator
+│       ├── WizardNavButtons.jsx     ← Back/Next/Skip/Finish
+│       ├── TimetableSlotRow.jsx     ← A single timetable row (add/remove)
+│       └── EventFormModal.jsx       ← Add/Edit a single semester event
+├── hooks/
+│   └── useEventTypes.js             ← Fetches GET /event-types once on mount
+└── App.jsx                          ← Add /setup route
+```
+
+**Why this folder structure?**
+
+- TRD Section 4 defines `pages/` (one file per SRD Section 20 screen) and `components/` (sub-components). We follow it exactly.
+- The `wizard/` subdirectory groups all wizard-specific files without polluting the top-level `pages/` and `components/` folders with future page names.
+- `hooks/` contains custom data-fetching hooks, per TRD Section 4 (`hooks/useSemester.js`, `usePlan.js`, `useSemesterEvents.js`).
+
+---
+
+### 2.5 State Management in `SetupWizard.jsx`
+
+The wizard holds one flat state object:
+
+```javascript
+const [formData, setFormData] = useState({
+  // Step 1
+  semester: {
+    name: "",
+    start_date: "",
+    end_date: "",
+  },
+  // Step 2
+  policy: {
+    min_overall_percentage: 75,
+    min_subject_percentage: 75,
+  },
+  // Step 3
+  subjects: [
+    // { name, code, held_count, present_count, min_percentage_override }
+  ],
+  // Step 4
+  timetable: [
+    // { subject_index, weekday, start_time, end_time, order_index }
+  ],
+  // Step 5
+  events: [
+    // { name, event_type_id, custom_type_label, start_date, end_date,
+    //   description, cancels_lectures_override, counts_towards_attendance_override,
+    //   is_working_day_override, exclude_from_recommendation_override }
+  ],
+});
+```
+
+**Why local state, not Context?**
+
+TRD Section 10 and Section 11 are explicit: `SemesterContext` holds the *active semester_id and cached plan data* — not wizard form state. The wizard is a transient UI flow. Its data is submitted in one batch and then discarded. No other component needs this transient data.
+
+**Why flat, not nested per step?**
+
+Simpler `onChange` handlers. `SetupWizard.jsx` passes `formData.subjects` and `setSubjects` down; each step only sees its own slice.
+
+---
+
+### 2.6 Navigation Flow
+
+```
+/setup (WizardStep 1)
+   ↓ Next (validates Step 1)
+/setup (WizardStep 2)
+   ↓ Next (validates Step 2)
+/setup (WizardStep 3)
+   ↓ Next (validates Step 3, at least 1 subject required)
+/setup (WizardStep 4)
+   ↓ Next (validates Step 4 — overlap check + time range)
+/setup (WizardStep 5)
+   ↓ Next OR Skip (Step 5 is optional per SRD Section 10.1.e)
+/setup (Review screen)
+   ↓ Finish → API calls → redirect to /dashboard
+```
+
+The wizard is a **single route** (`/setup`). The `currentStep` is an integer in `SetupWizard.jsx` state. No URL-based step navigation — URL changes are only needed when the wizard is done (redirect to `/dashboard`).
+
+**Why no URL-based steps?**
+
+The SRD does not require deep-linking into wizard steps. URL-based steps would add router complexity with zero documented benefit. The simplest implementation wins (AI_DEVELOPMENT_RULES Rule 11, Golden Rule).
+
+**Why redirect to `/dashboard` after finish?**
+
+SRD Section 10.2 says: after Plan Generation, the user "lands on Dashboard." The wizard itself doesn't generate a plan — that's the user's next manual action via the "Generate Plan" button on the Dashboard. So the wizard redirects to `/dashboard`.
+
+---
+
+### 2.7 API Integration
+
+On `Finish`, the wizard executes sequential API calls in this exact order:
+
+1. `POST /api/v1/semesters` → get `semester.id`
+2. For each subject: `POST /api/v1/semesters/{id}/subjects` → get `subject.id`
+3. For each timetable slot: `POST /api/v1/semesters/{id}/timetable` (using resolved `subject_id` from step 2)
+4. For each event (if any): `POST /api/v1/semesters/{id}/events`
+
+**Why sequential?**
+
+`subjects` require `semester_id`. `timetable` requires both `semester_id` and `subject_id`. Events require `semester_id`. The dependency chain forces this order.
+
+**Error handling on submit:**
+
+- Show a spinner/loading state during submission.
+- If any call fails, show the structured error (`errors[]` array from TRD Section 9.1) inline.
+- The user can correct and retry. We do NOT clean up partial data — partially created semesters are acceptable because the Dashboard won't generate a plan until all required fields exist. (This is the simplest acceptable behavior.)
+
+**`api/client.js` — Axios configuration:**
+
+```javascript
+// Base URL from env variable (TRD Section 15)
+// VITE_API_BASE_URL=http://localhost:8000/api/v1
+```
+
+All API functions will be thin wrappers (not hooks) — hooks are for stateful fetching in pages, not one-shot mutations.
+
+---
+
+### 2.8 Validation Strategy
+
+Every step validates locally before the wizard advances. Validation matches SRD Section 19 exactly.
+
+**Step 1 — Semester Details:**
+- `name` must be non-empty
+- `start_date` must be present
+- `end_date` must be present
+- `end_date` must be on or after `start_date`
+
+**Step 2 — Attendance Policy:**
+- `min_overall_percentage` must be in `(0, 100]`
+- `min_subject_percentage` must be in `(0, 100]`
+
+**Step 3 — Subjects:**
+- At least one subject must be added (SRD Section 19 Plan Generation Pre-check)
+- Each subject: `name` non-empty
+- Each subject: `held_count >= 0`, `present_count >= 0`
+- Each subject: `present_count <= held_count`
+- Each subject: `min_percentage_override` if set must be in `(0, 100]`
+- No duplicate subject names within the list
+
+**Step 4 — Timetable:**
+- At least one slot must exist (SRD Section 19 Plan Generation Pre-check)
+- Each slot: `start_time < end_time`
+- Each slot: `subject` must be selected (from the subjects defined in Step 3)
+- Each slot: `weekday` must be 0–6
+- No two slots on the same weekday may overlap in time
+
+**Step 5 — Events (skippable):**
+- Each event: `name` non-empty
+- Each event: `start_date <= end_date`
+- Each event: if event type key is `custom`, `custom_type_label` must be non-empty
+- Warning (non-blocking): if `start_date` is outside the semester's date range
+
+**Review — no new validation.** Displays a read-only summary only.
+
+**Why validate on the frontend when the backend also validates?**
+
+UX: immediate, local feedback without a network round trip. Both layers validate — the backend is the source of truth, the frontend is for user experience. If the backend returns a validation error (HTTP 422), the frontend surfaces it.
+
+---
+
+### 2.9 Step-Specific UI Details
+
+**Step 3 — Subjects:**
+- A table with one row per subject.
+- "Add Subject" button appends a blank row.
+- Each row: subject name (text), code (text, optional), held count (number), present count (number), min % override (number, optional).
+- Inline validation error per field.
+- A trash icon to remove a subject row.
+- Note visible to the user: "Held and present counts are entered manually. The system does not automatically update them."
+
+**Step 4 — Timetable:**
+- A list grouped by weekday (Monday through Saturday/Sunday).
+- "Add Slot" button opens a row: subject dropdown (populated from Step 3 subjects), start time, end time.
+- Inline overlap detection (highlighted in red if two rows on the same weekday overlap).
+- Trash icon per slot.
+
+**Step 5 — Events:**
+- A list of added events.
+- "Add Semester Event" opens `EventFormModal.jsx`.
+- `EventFormModal` fetches `GET /event-types` to populate the type dropdown (fetched once on mount via `useEventTypes` hook, cached in local state).
+- When a type is selected, the four flag toggles pre-fill with the type's default values.
+- If the user changes a toggle, the corresponding `*_override` is set to that boolean. If left at the default (not changed), the `*_override` is sent as `null` (so the backend resolves it from the type default, per TRD Section 7.1's `_coalesce` logic).
+- "Skip" button advances without requiring any events.
+
+**Review screen:**
+- Displays a read-only summary of all entered data in collapsible sections: Semester, Policy, Subjects, Timetable, Events.
+- A "Go Back" button that returns to the last step.
+- A "Finish" button that triggers the API calls.
+- A spinner overlay during submission.
+
+---
+
+### 2.10 WizardProgressBar
+
+Displays 5 numbered step indicators. The current step is visually highlighted. Completed steps show a checkmark icon. Future steps are grayed out.
+
+**Why 5 steps, not 6 (not counting Review)?**
+
+The SRD defines 5 data entry steps. The Review screen is the submission confirmation, not a data entry step. The progress bar tracks data steps only.
+
+---
+
+### 2.11 Responsive Design
+
+The wizard will be usable on desktop screens (the primary target for an MVP local-first app) but will not break on tablet-sized viewports. No mobile-specific layout is required by the SRD in MVP.
+
+Tailwind classes will use responsive prefixes (`sm:`, `md:`) only where needed to prevent overflow on smaller screens.
+
+---
+
+### 2.12 Testing Strategy
+
+**Manual Testing Steps:**
+
+1. Navigate to `/setup`.
+2. Step 1: Submit without filling in dates → should show validation errors.
+3. Step 1: Set `end_date` before `start_date` → should show error.
+4. Step 1: Fill valid data → advance to Step 2.
+5. Step 2: Enter `min_overall_percentage = 0` → should show error (must be > 0).
+6. Step 2: Enter `min_overall_percentage = 101` → should show error (must be ≤ 100).
+7. Step 2: Fill valid data → advance to Step 3.
+8. Step 3: Advance without adding any subject → should block (at least one required).
+9. Step 3: Add a subject with `present_count > held_count` → should show error.
+10. Step 3: Add two subjects with the same name → should show duplicate error.
+11. Step 3: Add valid subjects → advance to Step 4.
+12. Step 4: Advance without adding any slot → should block (at least one required).
+13. Step 4: Add two overlapping slots on the same weekday → should show overlap error.
+14. Step 4: Add slot with `start_time >= end_time` → should show error.
+15. Step 4: Add valid slots → advance to Step 5.
+16. Step 5: Click "Skip" → advance to Review.
+17. Step 5: Add an event with end_date before start_date → should show error.
+18. Step 5: Add an event with type "Other / Custom" but no custom label → should show error.
+19. Step 5: Add valid events → advance to Review.
+20. Review: Verify all entered data is shown correctly.
+21. Review: Click "Finish" → verify spinner, verify API calls succeed, verify redirect to `/dashboard`.
+22. With backend stopped: Click "Finish" → verify error message is displayed, not a crash.
+
+**Validation Cases Already Covered in Steps Above.**
+
+**API Integration Verification:**
+
+- Open browser DevTools → Network tab → confirm `POST /api/v1/semesters` fires first.
+- Confirm `POST /api/v1/semesters/{id}/subjects` fires for each subject in correct order.
+- Confirm `POST /api/v1/semesters/{id}/timetable` fires for each slot.
+- Confirm `POST /api/v1/semesters/{id}/events` fires for each event.
+- Verify backend Swagger at `/docs` shows all records created.
+
+---
+
+### 2.13 Completion Criteria (M2)
+
+M2 is complete **only when**:
+
+1. All 5 data entry steps + Review screen render correctly.
+2. All SRD Section 19 validation rules are enforced client-side.
+3. The wizard correctly pre-fills event flag toggles from the selected event type's defaults.
+4. Custom event type requires a custom label.
+5. Timetable overlap check works correctly on the frontend.
+6. On Finish, API calls fire in the correct sequence.
+7. On API error, the error is surfaced inline — no crash.
+8. On success, the user is redirected to `/dashboard`.
+9. All manual testing steps above pass.
+10. No TODO comments remain.
+11. No component exceeds ~250 lines.
+
+---
+
+## User Review Required
+
+I have completed Step 1 (Think) and Step 2 (Explain).
+
+This is a full implementation plan for M2. I am now at **Step 3 — Wait**.
+
+Please review this plan and, if you approve it, give me explicit approval to begin Step 4 (Implementation).
+
+I will not write any code until you approve.
