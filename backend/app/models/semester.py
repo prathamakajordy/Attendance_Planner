@@ -20,3 +20,5 @@ class SemesterProfile(Base):
     subjects = relationship("Subject", back_populates="semester", cascade="all, delete-orphan")
     timetable_slots = relationship("TimetableSlot", back_populates="semester", cascade="all, delete-orphan")
     events = relationship("SemesterEvent", back_populates="semester", cascade="all, delete-orphan")
+    plan_metadata = relationship("PlanMetadata", back_populates="semester", uselist=False, cascade="all, delete-orphan")
+    plan_days = relationship("PlanDay", back_populates="semester", cascade="all, delete-orphan")

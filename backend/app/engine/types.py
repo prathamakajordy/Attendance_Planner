@@ -38,3 +38,30 @@ class RequirementResult:
     need_attend: int
     is_feasible: bool
     best_achievable_percentage: float
+
+@dataclass
+class SlotMark:
+    slot: TimetableSlotRef
+    mark: str
+    forced: bool = False
+
+@dataclass
+class DaySelection:
+    date: date
+    is_lecture_day: bool
+    slot_marks: list[SlotMark]
+
+@dataclass
+class PlanBlockResult:
+    start_time: time
+    end_time: time
+    subject_ids: list[int]
+    recommendation: str
+    block_explanation: str | None = None
+
+@dataclass
+class PlanDayResult:
+    date: date
+    is_lecture_day: bool
+    blocks: list[PlanBlockResult]
+    day_explanation: str | None = None

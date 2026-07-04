@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import semester, subject, timetable, event_types, semester_events
+from app.api import semester, subject, timetable, event_types, semester_events, plan
 from app.db.session import SessionLocal
 from app.db.seed_event_types import seed
 
@@ -30,6 +30,7 @@ app.include_router(subject.router, prefix="/api/v1", tags=["subjects"])
 app.include_router(timetable.router, prefix="/api/v1", tags=["timetable"])
 app.include_router(event_types.router, prefix="/api/v1", tags=["event_types"])
 app.include_router(semester_events.router, prefix="/api/v1", tags=["semester_events"])
+app.include_router(plan.router, prefix="/api/v1", tags=["plan"])
 
 @app.get("/")
 def read_root():

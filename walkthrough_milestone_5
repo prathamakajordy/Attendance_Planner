@@ -1,0 +1,55 @@
+# Milestone 5 Walkthrough: Recommendation Service & API Integration
+
+## Summary
+This milestone connects the frozen Recommendation Engine (M4) to the outside world through a FastAPI service layer and SQLite persistence. The engine remains completely untouched.
+
+## Files Created
+
+| File | Purpose |
+|------|---------|
+| [plan.py](file:///d:/Pratham/Attendance/backend/app/models/plan.py) | SQLAlchemy models: `PlanMetadata`, `PlanDay`, `PlanBlock` |
+| [plan.py](file:///d:/Pratham/Attendance/backend/app/schemas/plan.py) | Pydantic schemas: `PlanGenerationResponse`, `ErrorResponse`, etc. |
+| [recommendation_service.py](file:///d:/Pratham/Attendance/backend/app/services/recommendation_service.py) | Orchestrator: DB → Eligibility Filter → Engine → Persistence |
+| [plan.py](file:///d:/Pratham/Attendance/backend/app/api/plan.py) | API endpoints: `POST /plan/generate`, `GET /plan` |
+| [a1b2c3d4e5f6_add_plan_tables.py](file:///d:/Pratham/Attendance/backend/alembic/versions/a1b2c3d4e5f6_add_plan_tables.py) | Alembic migration for plan tables |
+| [test_plan.py](file:///d:/Pratham/Attendance/backend/tests/api/test_plan.py) | 11 integration tests |
+| [__init__.py](file:///d:/Pratham/Attendance/backend/app/services/__init__.py) | Services module init |
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| [semester.py](file:///d:/Pratham/Attendance/backend/app/models/semester.py) | Added `plan_metadata` and `plan_days` relationships |
+| [__init__.py](file:///d:/Pratham/Attendance/backend/app/models/__init__.py) | Registered plan model imports |
+| [main.py](file:///d:/Pratham/Attendance/backend/app/main.py) | Registered plan API router |
+
+## Database Tables Added
+
+| Table | Key Columns |
+|-------|-------------|
+| `plan_metadata` | `semester_id` (PK/FK), `generated_at`, `engine_version`, `overall_feasible` |
+| `plan_day` | `id`, `semester_id` (FK), `date`, `is_lecture_day`, `day_explanation` |
+| `plan_block` | `id`, `plan_day_id` (FK), `start_time`, `end_time`, `subject_ids` (JSON), `recommendation`, `block_explanation` |
+
+## API Endpoints
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| `POST` | `/api/v1/semesters/{id}/plan/generate` | Runs engine, replaces existing plan, returns full response |
+| `GET` | `/api/v1/semesters/{id}/plan` | Retrieves currently active plan from DB |
+
+## Refinements Applied
+1. **Plan Metadata**: `generated_at`, `engine_version`, `overall_feasible`, `total_recommended_days`, `total_recommended_blocks` included in every response.
+2. **Standardized Errors**: All errors use `{"error_code": "CODE", "message": "..."}` format.
+3. **Engine Version**: Stored as `"v1.0"` in `plan_metadata` table.
+
+## Test Results
+- **11 new API tests**: All passing
+- **24 engine regression tests**: All passing (no regressions)
+- **Coverage**: 85% overall, 100% for `api/plan.py`, 97% for `recommendation_service.py`
+
+## Architecture Decisions
+- The `recommendation_service.py` is the **only** bridge between the DB and the frozen engine. The engine never sees SQLAlchemy models directly.
+- Academic Eligibility filtering happens in `_filter_slots_for_eligibility()` before the engine is called.
+- `subject_ids` is stored as a JSON-encoded string in SQLite (no native array type). The `PlanBlock` model exposes `subject_ids_list` property for convenience.
+- Plan replacement is atomic: old plan_days and plan_metadata are deleted before new ones are inserted, all within a single transaction.
