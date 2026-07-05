@@ -1,0 +1,228 @@
+
+# Version 1.1 — Scope Analysis & Milestone Proposal
+
+## Overview
+
+Version 1.0 is the stable baseline. It delivers:
+- Setup Wizard (manual entry of semester, subjects, timetable, events)
+- Recommendation Engine (greedy slot selection + block consolidation)
+- Dashboard, Interactive Calendar, Day Details Panel
+- All data persisted in SQLite via Alembic migrations
+
+Version 1.1 introduces **four goals**. This document analyses each one for scope, architectural impact, risks, and dependencies — then proposes a milestone breakdown.
+
+---
+
+## Goal 1 — Smart Academic Document Import
+
+### What It Does
+Accept PDF or image uploads of:
+- **Timetable** (class schedule table)
+- **Academic Calendar** (holidays, exams, events list)
+
+Extract structured data, present it in a **review & correction screen**, then save to the existing database tables.
+
+### Architectural Impact
+
+| Layer | Impact |
+|---|---|
+| **Backend — New Service** | A new `import/` service package is required. This service must handle file upload, invoke an extraction pipeline, return structured candidates, and then accept confirmed data. |
+| **Backend — Extraction Logic** | The core extraction will use a **local, free OCR/parsing library** (zero cost constraint from AI_DEVELOPMENT_RULES.md). Candidates: `pdfplumber` for PDF tables, `Tesseract OCR` (via `pytesseract`) for images. No paid AI APIs (Rule 15). |
+| **Backend — API** | New endpoints: `POST /semesters/{id}/import/timetable` (upload), `POST /semesters/{id}/import/calendar` (upload), and corresponding `POST /semesters/{id}/import/confirm` (save confirmed data). |
+| **Database** | No schema changes to core tables. A new `import_session` table may be needed to temporarily store extracted candidates before user confirmation. |
+| **Frontend** | New `ImportWizard` component with: file upload dropzone, extraction progress indicator, tabular review/correction UI with inline editing, and a "Confirm & Save" action. |
+| **Recommendation Engine** | ❌ **No impact.** Import feeds the same tables the manual wizard uses. |
+
+### Risks
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| OCR accuracy on low-quality images / non-standard PDF layouts | **High** | The review & correction screen is mandatory — extraction is always a *suggestion*, never auto-saved. |
+| Tesseract requires a system-level installation (`tesseract-ocr` binary) | **Medium** | Document the installation step clearly in README; consider a Docker option for portability. |
+| Diverse timetable formats across colleges make universal parsing fragile | **High** | Start with a **structured table parser** for clean PDFs; for images, extract text and attempt heuristic column/row detection. Accept that V1.1 will handle ~60-70% of formats well, not 100%. |
+| Academic calendar PDFs are often free-form text, not tables | **Medium** | Use date-regex extraction + event-name heuristics; always surface results for human correction. |
+
+### Dependencies
+- `pdfplumber` (MIT, free) for PDF table extraction
+- `pytesseract` (Apache 2.0, free) + Tesseract OCR binary for image extraction
+- `Pillow` (MIT-like, free) for image preprocessing
+
+---
+
+## Goal 2 — Attendance Distribution
+
+### What It Does
+The V1.0 engine uses a **Greedy Deferral Algorithm** (ADD Section 6.4, ENGINE_ARCHITECTURE.md Section 2.4):
+
+> `must_attend = remaining_occurrences <= remaining_need`
+
+This concentrates all skips at the **beginning** of the semester and all attendance at the **end**. While mathematically correct, it produces an unrealistic plan — a student doesn't want to skip everything for 8 weeks then attend everything for 4 weeks.
+
+V1.1 must **distribute** attendance evenly throughout the semester.
+
+### Architectural Impact
+
+> [!IMPORTANT]
+> This is the **only goal** in V1.1 that modifies the frozen Recommendation Engine. It changes `slot_selector.py` only.
+
+| Layer | Impact |
+|---|---|
+| **Engine — `slot_selector.py`** | The core `must_attend` inequality must be replaced with a **distributed allocation strategy**. Instead of deferring all skips to the front, the engine should spread skip-budget evenly across remaining weeks/days. |
+| **Engine — All other stages** | ❌ **No impact.** Event Resolution, Calendar Expansion, Requirement Calculation, Block Consolidation, and Explanation Generation remain unchanged. The pipeline contract (`select()` takes `CalendarDay[]` + `RequirementResult{}`, returns `DaySelection[]`) is preserved. |
+| **Database** | ❌ **No schema changes.** The output format (`PlanDay`, `PlanBlock`) is identical. |
+| **Frontend** | ❌ **No frontend changes.** The dashboard and calendar render the same plan structure. |
+| **API** | ❌ **No API changes.** |
+
+### Proposed Algorithm Change
+
+Replace the single-pass greedy deferral with a **per-subject skip-budget distribution**:
+
+```
+For each subject S:
+    slack = total_future_lectures - need_attend  (number of skippable lectures)
+    skip_interval = total_future_lectures / (slack + 1)  (evenly space skips)
+```
+
+Then, when processing slots chronologically, instead of `must_attend = remaining_occurrences <= remaining_need`, use:
+
+```
+skip_counter[S] tracks how many slots since last skip
+If skip_counter[S] >= skip_interval AND remaining_slack[S] > 0:
+    mark = Skip
+    remaining_slack[S] -= 1
+    skip_counter[S] = 0
+Else:
+    mark = Attend
+```
+
+This preserves the deterministic, single-pass nature and the pipeline contract. Block Consolidation continues to work identically downstream.
+
+### Risks
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| Distributed skips may interact poorly with Block Consolidation (more sandwiched skips → more forced Attends) | **Medium** | Test extensively with the canonical DBMS/OS/Maths/EFM fixture. Accept that distribution reduces skip efficiency slightly in exchange for realism. |
+| Algorithm must still guarantee feasibility (Goal 1 of ADD Section 2) | **Critical** | The total skip budget is still bounded by `slack`; distribution only changes *when* skips happen, not *how many*. Feasibility is preserved by construction. |
+| Regression risk against all existing engine tests | **Medium** | Run all existing unit tests; update expected outputs where the *order* of skips changes but the *count* remains correct. |
+
+### Dependencies
+- None external. This is a pure algorithm change within `slot_selector.py`.
+
+---
+
+## Goal 3 — Attendance Policies (Slot-Type-Based)
+
+### What It Does
+Support different attendance requirements for different *types* of lecture slots:
+
+| Slot Type | Example Policy |
+|---|---|
+| Normal Lecture | 75% minimum |
+| Mandatory Tutorial | 100% attendance required |
+| Limited-Absence Lab | Max 2 absences allowed |
+| Mandatory Project Review | Cannot miss any |
+
+V1.0 treats all slots identically — one `min_subject_percentage` per subject. V1.1 must allow **per-slot-type** policies.
+
+### Architectural Impact
+
+| Layer | Impact |
+|---|---|
+| **Database — New Table** | A `slot_type` reference table (e.g., `id`, `name`, `policy_mode`, `policy_value`). `policy_mode` could be `percentage` or `max_absences`. |
+| **Database — `timetable_slot`** | Add a nullable `slot_type_id` FK column (default = "Normal Lecture"). Requires a new Alembic migration. |
+| **Engine — `requirement_calc.py`** | Must compute requirements **per subject × slot_type** combination, not just per subject. This changes the `RequirementResult` structure to include a `slot_type_id` dimension. |
+| **Engine — `slot_selector.py`** | Must track `remaining_need` and `remaining_occurrences` per `(subject_id, slot_type_id)` pair. |
+| **Engine — `types.py`** | `TimetableSlotRef` gains a `slot_type_id` field. `RequirementResult` may need to be per `(subject, slot_type)`. |
+| **Engine — `explanation_generator.py`** | Templates should mention the slot type when it drives the recommendation (e.g., "Lab session — mandatory attendance"). |
+| **Frontend — Timetable Wizard** | Each slot row needs a "Type" dropdown (Normal, Tutorial, Lab, Review). |
+| **Frontend — Dashboard** | May need to show per-type breakdowns. |
+| **API** | New `GET /slot-types` endpoint. `TimetableSlotCreate` schema gains `slot_type_id`. |
+| **Schemas** | `TimetableSlotRead` gains `slot_type` info. |
+
+### Risks
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| "Max absences" policy mode is fundamentally different math from "percentage" mode — two code paths in requirement_calc | **Medium** | Implement a small `PolicyEvaluator` abstraction that `requirement_calc` delegates to, keeping the main logic clean. |
+| Complicates the Requirement Calculation stage significantly — N subjects × M slot types instead of just N subjects | **Medium** | In practice, M ≤ 4 and N ≤ 10, so the computational impact is negligible. The complexity is in the *code*, not performance. |
+| Adds cognitive load to the Setup Wizard for new users | **Low** | Default all slots to "Normal Lecture" so the wizard works identically to V1.0 unless the user explicitly chooses a different type. |
+
+### Dependencies
+- Goal 2 (Attendance Distribution) should be implemented **before** Goal 3, because Goal 3 changes the data structure that `slot_selector.py` operates on. Implementing them in reverse order would require rewriting the distribution logic.
+
+---
+
+## Goal 4 — Better User Experience
+
+### What It Does
+Improve onboarding and usability while preserving the existing architecture. This is the least risky goal — purely frontend polish.
+
+### Potential Improvements
+
+| Improvement | Impact |
+|---|---|
+| **Guided first-run tour** (tooltips highlighting key UI elements) | Frontend only |
+| **Inline help text** on each wizard step explaining *why* this data matters | Frontend only |
+| **Quick-start templates** (pre-filled example semester data for demo/testing) | Frontend + one seed API |
+| **Better mobile responsiveness** | Frontend CSS only |
+| **Keyboard shortcuts** for common actions | Frontend only |
+| **Progress indicator** showing "how much setup is left" | Frontend only |
+
+### Risks
+- Minimal. UX polish is low-risk by nature.
+
+### Dependencies
+- None. Can be done in parallel with any other goal.
+
+---
+
+## Cross-Cutting Concerns
+
+### Documentation Updates Required
+All four goals require updates to the project's documentation hierarchy:
+1. **SRD v1.1** — New functional requirements (FR-11/FR-12 for import, new attendance policy types)
+2. **TRD v1.1** — New API endpoints, schema changes, extraction service design
+3. **ADD v1.1** — Revised Slot Selection algorithm (distribution), per-slot-type requirement calculation
+4. **ENGINE_ARCHITECTURE.md** — Updated pipeline description reflecting distribution and slot types
+
+### Testing Strategy
+- **Engine regression tests**: All 48 existing tests must continue to pass (with expected output adjustments for Goal 2's distribution change)
+- **New engine tests**: Distribution algorithm tests, per-slot-type requirement calculation tests
+- **Import tests**: PDF/image extraction accuracy tests with sample documents
+- **Frontend E2E**: Import wizard flow, slot-type selection in timetable builder
+
+---
+
+## Proposed Milestone Breakdown
+
+> [!NOTE]
+> Milestones are ordered by dependency. Each milestone is independently shippable — the app works correctly after each one.
+
+| Milestone | Scope | Engine Impact | DB Migration |
+|---|---|---|---|
+| **M1 — Attendance Distribution** | Modify `slot_selector.py` to distribute skips evenly instead of deferring. Update ADD and ENGINE_ARCHITECTURE.md. Full regression testing. | ✅ Yes (`slot_selector.py` only) | ❌ No |
+| **M2 — Slot Type System** | New `slot_type` table, `timetable_slot.slot_type_id` column, per-slot-type requirement calculation, updated wizard UI with type dropdown. | ✅ Yes (`requirement_calc.py`, `slot_selector.py`, `types.py`, `explanation_generator.py`) | ✅ Yes |
+| **M3 — PDF Timetable Import** | PDF upload endpoint, `pdfplumber`-based table extraction, review/correction screen, confirm-and-save flow. | ❌ No | ⚠️ Maybe (temp `import_session`) |
+| **M4 — Image Timetable Import (OCR)** | Image upload endpoint, Tesseract OCR extraction, same review/correction screen as M3. | ❌ No | ❌ No (reuses M3 infra) |
+| **M5 — Academic Calendar Import** | PDF/image upload for academic calendars, date/event extraction, mapped to `SemesterEvent` table, review screen. | ❌ No | ❌ No |
+| **M6 — UX Polish & Onboarding** | Guided tour, inline help, mobile polish, keyboard shortcuts. | ❌ No | ❌ No |
+| **M7 — Documentation & Release** | SRD v1.1, TRD v1.1, ADD v1.1 updates. README screenshots. Release notes. | ❌ No | ❌ No |
+
+---
+
+## Open Questions for Your Review
+
+> [!IMPORTANT]
+> **Q1 — Distribution Algorithm**: The proposed skip-interval approach is one strategy. An alternative is a **weekly-budget approach** (allocate N skips per week proportionally). Which style do you prefer, or should I present both in detail?
+
+> [!IMPORTANT]
+> **Q2 — Slot Types**: Should slot types be **global** (shared across all semesters, like event types) or **per-semester** (each semester defines its own types)?
+
+> [!IMPORTANT]
+> **Q3 — Import Scope**: For V1.1, should we support **both PDF and image** import for timetables, or start with PDF-only and add image/OCR in a later version? PDF parsing is significantly more reliable than OCR.
+
+> [!IMPORTANT]
+> **Q4 — Milestone Ordering**: Goals 1 (Import) and Goal 2+3 (Engine changes) are independent. Would you prefer engine improvements first (M1→M2) then import (M3→M5), or interleave them differently?
+
+> [!WARNING]
+> **Q5 — Tesseract Dependency**: Tesseract OCR requires installing a system binary (`tesseract-ocr`). This adds a setup step for new developers. Are you comfortable with this dependency, or should we explore a pure-Python alternative (lower accuracy but zero system deps)?

@@ -15,6 +15,30 @@ export const getSemester = (semesterId) => apiClient.get(`/semesters/${semesterI
 export const updateSemester = (semesterId, data) => apiClient.put(`/semesters/${semesterId}`, data);
 export const deleteSemester = (semesterId) => apiClient.delete(`/semesters/${semesterId}`);
 
+export const planAPI = {
+  generatePlan: (semesterId) => apiClient.post(`/semesters/${semesterId}/plan/generate`),
+  getDashboardPlan: (semesterId) => apiClient.get(`/semesters/${semesterId}/plan/dashboard`),
+  getCalendarPlan: (semesterId) => apiClient.get(`/semesters/${semesterId}/plan/calendar`),
+  getDailyPlan: (semesterId) => apiClient.get(`/semesters/${semesterId}/plan/daily`),
+  getSubjectPlan: (semesterId) => apiClient.get(`/semesters/${semesterId}/plan/subjects`),
+  getTimelinePlan: (semesterId) => apiClient.get(`/semesters/${semesterId}/plan/timeline`),
+};
+
+export const importAPI = {
+  uploadTimetable: (semesterId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiClient.post(`/semesters/${semesterId}/import/timetable`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+  getSession: (sessionId) => apiClient.get(`/import-sessions/${sessionId}`),
+  confirmSession: (sessionId, finalPayload) => apiClient.post(`/import-sessions/${sessionId}/confirm`, { final_payload: finalPayload }),
+  deleteSession: (sessionId) => apiClient.delete(`/import-sessions/${sessionId}`),
+};
+
 // ── Subjects ──────────────────────────────────────────────────────────────
 export const getSubjects = (semesterId) => apiClient.get(`/semesters/${semesterId}/subjects`);
 export const createSubject = (semesterId, data) =>

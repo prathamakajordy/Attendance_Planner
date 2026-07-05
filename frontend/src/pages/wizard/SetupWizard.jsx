@@ -259,6 +259,7 @@ function SetupWizard() {
               timetable={formData.timetable}
               subjects={formData.subjects}
               onChange={updateTimetable}
+              onSubjectsChange={updateSubjects}
               errors={stepErrors}
             />
           )}

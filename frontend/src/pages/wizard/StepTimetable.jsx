@@ -1,5 +1,7 @@
+import React, { useState } from 'react';
 import TimetableSlotRow, { WEEKDAYS } from '../../components/wizard/TimetableSlotRow';
-
+import ImportWizard from './ImportWizard';
+import { FiUploadCloud } from 'react-icons/fi';
 /**
  * StepTimetable — Step 4 of the Setup Wizard.
  *
@@ -17,7 +19,9 @@ import TimetableSlotRow, { WEEKDAYS } from '../../components/wizard/TimetableSlo
  *   onChange: (timetable) => void
  *   errors: { _list?, [index]: string }
  */
-function StepTimetable({ timetable, subjects, onChange, errors }) {
+function StepTimetable({ timetable, subjects, onChange, onSubjectsChange, errors, semesterId }) {
+  const [importMode, setImportMode] = useState(false);
+
   const addSlot = (weekdayValue) => {
     const nextOrder = timetable.length;
     
@@ -70,13 +74,64 @@ function StepTimetable({ timetable, subjects, onChange, errors }) {
       .filter(({ slot }) => slot.weekday === day.value),
   }));
 
+  const handleImportComplete = (payload) => {
+    if (payload && payload.length > 0) {
+      // payload has {weekday, start_time, end_time, subject_name}
+      // Step 3 creates subjects, so we need to map subject names to existing subject_index or create new ones
+      let nextSubjectOrder = subjects.length;
+      let newSubjects = [...subjects];
+      let newTimetable = [...timetable];
+      let orderIndex = timetable.length;
+      
+      payload.forEach(row => {
+        let subjIdx = newSubjects.findIndex(s => s.name.toLowerCase() === row.subject_name.toLowerCase());
+        if (subjIdx === -1) {
+          subjIdx = nextSubjectOrder++;
+          newSubjects.push({ name: row.subject_name, code: '', held_count: 0, present_count: 0 });
+        }
+        
+        newTimetable.push({
+          subject_index: subjIdx,
+          weekday: row.weekday,
+          start_time: row.start_time.substring(0, 5), // '09:00:00' -> '09:00'
+          end_time: row.end_time.substring(0, 5),
+          order_index: orderIndex++
+        });
+      });
+      
+      if (newSubjects.length > subjects.length && onSubjectsChange) {
+         onSubjectsChange(newSubjects);
+      }
+      onChange(newTimetable);
+    }
+    setImportMode(false);
+  };
+
+  if (importMode) {
+    return (
+      <ImportWizard 
+        semesterId={semesterId || "wizard"} 
+        onComplete={handleImportComplete} 
+        onCancel={() => setImportMode(false)} 
+      />
+    );
+  }
+
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-semibold text-slate-100">Weekly Timetable</h2>
-        <p className="text-sm text-slate-400 mt-1">
-          Define your recurring weekly lecture schedule. Each slot maps a subject to a specific day and time. This timetable repeats every week of the semester.
-        </p>
+        <div className="flex items-center justify-between mt-1">
+          <p className="text-sm text-slate-400">
+            Define your recurring weekly lecture schedule. Each slot maps a subject to a specific day and time. This timetable repeats every week of the semester.
+          </p>
+          <button
+            onClick={() => setImportMode(true)}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-brand-400 bg-brand-500/10 hover:bg-brand-500/20 rounded-lg transition-colors border border-brand-500/20"
+          >
+            <FiUploadCloud size={14} /> Smart Import
+          </button>
+        </div>
       </div>
 
       {/* Global list error */}
