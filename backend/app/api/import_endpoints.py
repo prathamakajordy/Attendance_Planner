@@ -73,7 +73,7 @@ async def import_timetable(semester_id: str, file: UploadFile = File(...), db: S
             os.remove(temp_file_path)
         if str(e) == "MULTIPLE_TIMETABLES_DETECTED":
             raise HTTPException(status_code=400, detail="Multiple timetables detected. Please upload a single timetable.")
-        raise e
+        raise HTTPException(status_code=422, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:

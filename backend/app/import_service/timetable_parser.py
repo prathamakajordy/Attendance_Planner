@@ -94,6 +94,10 @@ def _parse_grid(grid: List[List[Dict[str, Any]]], fixed_confidence: float = None
                 
     return extracted_rows
 
+import pypdfium2 as pdfium
+import tempfile
+import os
+
 def extract_timetable_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
     candidate_grids = []
     
@@ -118,10 +122,41 @@ def extract_timetable_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
     if len(candidate_grids) > 1:
         raise ValueError("MULTIPLE_TIMETABLES_DETECTED")
         
-    if not candidate_grids:
-        return []
+    if candidate_grids:
+        return _parse_grid(candidate_grids[0], fixed_confidence=0.9)
         
-    return _parse_grid(candidate_grids[0], fixed_confidence=0.9)
+    # If no textual table was found, fallback to OCR by rendering pages to images
+    if not TESSERACT_AVAILABLE:
+        raise ValueError("No text-based timetable data found. Document may be an image-based PDF, but OCR is disabled on this server.")
+        
+    pdf_doc = pdfium.PdfDocument(pdf_path)
+    extracted_rows = []
+    
+    for i in range(len(pdf_doc)):
+        page = pdf_doc[i]
+        # Render at ~300 DPI (72 * (300/72))
+        bitmap = page.render(scale=4.166)
+        pil_image = bitmap.to_pil()
+        
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp_path = tmp.name
+            
+        try:
+            pil_image.save(tmp_path)
+            rows = extract_timetable_from_image(tmp_path)
+            if rows:
+                if extracted_rows:
+                    # We already found a timetable on a previous page
+                    raise ValueError("MULTIPLE_TIMETABLES_DETECTED")
+                extracted_rows = rows
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+                
+    if not extracted_rows:
+        raise ValueError("No timetable data found. We could not extract any valid timetable structure from this document.")
+        
+    return extracted_rows
 
 
 def extract_timetable_from_image(image_path: str) -> List[Dict[str, Any]]:

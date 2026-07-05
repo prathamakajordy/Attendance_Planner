@@ -113,7 +113,7 @@ def test_valid_image_upload(mock_image_to_data, mock_preprocess, test_client, mo
     assert slot["subject_name"] == "Math"
     assert slot["confidence"] == 0.8 # Math's conf is 80 -> 0.8
 
-@patch('app.import_service.timetable_parser.extract_timetable_from_pdf')
+@patch('app.api.import_endpoints.extract_timetable_from_pdf')
 def test_multiple_tables_validation(mock_pdf_extract, test_client, mock_semester):
     # Mock extract to raise multiple timetables detected
     mock_pdf_extract.side_effect = ValueError("MULTIPLE_TIMETABLES_DETECTED")
@@ -125,7 +125,7 @@ def test_multiple_tables_validation(mock_pdf_extract, test_client, mock_semester
     assert res.status_code == 400
     assert "Multiple timetables detected" in res.json()["detail"]
 
-@patch('app.import_service.timetable_parser.extract_timetable_from_pdf')
+@patch('app.api.import_endpoints.extract_timetable_from_pdf')
 def test_temporary_file_cleanup_on_success(mock_pdf_extract, test_client, mock_semester):
     mock_pdf_extract.return_value = [
         {"weekday": 1, "start_time": "09:00", "end_time": "10:00", "subject_name": "Physics", "confidence": 0.9}
@@ -139,7 +139,7 @@ def test_temporary_file_cleanup_on_success(mock_pdf_extract, test_client, mock_s
     session_id = res.json()["id"]
     
     # We can use API to verify it was created
-    res_get = test_client.get(f"/api/v1/import-sessions/{session_id}")
+    res_get = test_client.get(f"/api/v1/semesters/sessions/{session_id}")
     assert res_get.status_code == 200
     file_path = res_get.json().get("file_path", f"uploads/{session_id}_cleanup.pdf") # Assuming file_path is returned or we guess it
     
@@ -152,7 +152,7 @@ def test_temporary_file_cleanup_on_success(mock_pdf_extract, test_client, mock_s
     
     # Confirm
     res_confirm = test_client.post(
-        f"/api/v1/import-sessions/{session_id}/confirm",
+        f"/api/v1/semesters/sessions/{session_id}/confirm",
         json={"final_payload": res.json()["extracted_payload"]}
     )
     assert res_confirm.status_code == 200
@@ -160,7 +160,7 @@ def test_temporary_file_cleanup_on_success(mock_pdf_extract, test_client, mock_s
     # Verify file is deleted
     assert not os.path.exists(actual_file)
 
-@patch('app.import_service.timetable_parser.extract_timetable_from_pdf')
+@patch('app.api.import_endpoints.extract_timetable_from_pdf')
 def test_temporary_file_cleanup_on_delete(mock_pdf_extract, test_client, mock_semester):
     mock_pdf_extract.return_value = [
         {"weekday": 1, "start_time": "09:00", "end_time": "10:00", "subject_name": "Physics", "confidence": 0.9}
@@ -179,7 +179,7 @@ def test_temporary_file_cleanup_on_delete(mock_pdf_extract, test_client, mock_se
     actual_file = files_before[0]
     
     # Delete
-    res_del = test_client.delete(f"/api/v1/import-sessions/{session_id}")
+    res_del = test_client.delete(f"/api/v1/semesters/sessions/{session_id}")
     assert res_del.status_code == 204
     
     # Verify file is deleted
