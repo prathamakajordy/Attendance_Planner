@@ -50,12 +50,9 @@ def test_ocr_unavailable(test_client, mock_semester):
     assert res.status_code == 501
     assert "OCR_UNAVAILABLE" in res.json()["detail"]
 
-@patch('app.import_service.timetable_parser.TESSERACT_AVAILABLE', True)
-@patch('app.import_service.timetable_parser.preprocess_image_for_ocr')
-@patch('pytesseract.image_to_data')
-def test_ocr_failure(mock_image_to_data, mock_preprocess, test_client, mock_semester):
-    mock_preprocess.return_value = "dummy_binary_img"
-    mock_image_to_data.side_effect = pytesseract.TesseractNotFoundError()
+@patch('app.api.import_endpoints.extract_timetable_from_image')
+def test_ocr_failure(mock_image_extract, test_client, mock_semester):
+    mock_image_extract.side_effect = NotImplementedError("OCR_UNAVAILABLE")
     
     res = test_client.post(
         f"/api/v1/semesters/{mock_semester.id}/import/timetable",
@@ -64,15 +61,10 @@ def test_ocr_failure(mock_image_to_data, mock_preprocess, test_client, mock_seme
     assert res.status_code == 501
     assert "OCR_UNAVAILABLE" in res.json()["detail"]
 
-@patch('app.import_service.timetable_parser.TESSERACT_AVAILABLE', True)
-@patch('app.import_service.timetable_parser.preprocess_image_for_ocr')
-@patch('pytesseract.image_to_data')
-def test_empty_ocr_output(mock_image_to_data, mock_preprocess, test_client, mock_semester):
-    mock_preprocess.return_value = "dummy_binary_img"
-    # Mock empty tesseract output
-    mock_image_to_data.return_value = {
-        'text': [''], 'conf': ['-1'], 'left': [0], 'top': [0], 'width': [0], 'height': [0]
-    }
+@patch('app.api.import_endpoints.extract_timetable_from_image')
+def test_empty_ocr_output(mock_image_extract, test_client, mock_semester):
+    # Mock empty parsing result
+    mock_image_extract.side_effect = ValueError("No timetable data found. We could not extract any valid timetable structure from this document.")
     
     res = test_client.post(
         f"/api/v1/semesters/{mock_semester.id}/import/timetable",
@@ -82,20 +74,11 @@ def test_empty_ocr_output(mock_image_to_data, mock_preprocess, test_client, mock
     assert res.status_code == 422
     assert "No timetable data found" in res.json()["detail"]
 
-@patch('app.import_service.timetable_parser.TESSERACT_AVAILABLE', True)
-@patch('app.import_service.timetable_parser.preprocess_image_for_ocr')
-@patch('pytesseract.image_to_data')
-def test_valid_image_upload(mock_image_to_data, mock_preprocess, test_client, mock_semester):
-    mock_preprocess.return_value = "dummy_binary_img"
-    
-    mock_image_to_data.return_value = {
-        'text': ['Day', '09:00', 'Monday', 'Math'], 
-        'conf': ['90', '90', '90', '80'], 
-        'left': [10, 100, 10, 100], 
-        'top': [0, 0, 20, 20], 
-        'width': [50, 50, 50, 50], 
-        'height': [20, 20, 20, 20]
-    }
+@patch('app.api.import_endpoints.extract_timetable_from_image')
+def test_valid_image_upload(mock_image_extract, test_client, mock_semester):
+    mock_image_extract.return_value = [
+        {"weekday": 0, "start_time": "09:00:00", "end_time": "10:00:00", "subject_name": "Math", "confidence": 0.8}
+    ]
     
     res = test_client.post(
         f"/api/v1/semesters/{mock_semester.id}/import/timetable",
@@ -111,7 +94,7 @@ def test_valid_image_upload(mock_image_to_data, mock_preprocess, test_client, mo
     slot = data["extracted_payload"][0]
     assert slot["weekday"] == 0 # Monday
     assert slot["subject_name"] == "Math"
-    assert slot["confidence"] == 0.8 # Math's conf is 80 -> 0.8
+    assert slot["confidence"] == 0.8
 
 @patch('app.api.import_endpoints.extract_timetable_from_pdf')
 def test_multiple_tables_validation(mock_pdf_extract, test_client, mock_semester):
